@@ -33,6 +33,7 @@ use storage_queue::StorageQueue;
 
 pub const STORAGE_PROGRAM_PREFIX: &[u8] = b"g::prog::";
 pub const STORAGE_PROGRAM_PAGES_PREFIX: &[u8] = b"g::pages::";
+pub const STORAGE_PROGRAM_STATE_PREFIX: &[u8] = b"g::prog::state::";
 pub const STORAGE_MESSAGE_PREFIX: &[u8] = b"g::msg::";
 pub const STORAGE_MESSAGE_NONCE_KEY: &[u8] = b"g::msg::nonce";
 pub const STORAGE_MESSAGE_USER_NONCE_KEY: &[u8] = b"g::msg::user_nonce";
@@ -130,6 +131,13 @@ fn program_key(id: H256) -> Vec<u8> {
     key
 }
 
+fn program_state_key(id: H256) -> Vec<u8> {
+    let mut key = Vec::new();
+    key.extend(STORAGE_PROGRAM_STATE_PREFIX);
+    id.encode_to(&mut key);
+    key
+}
+
 fn code_key(code_hash: H256) -> (Vec<u8>, Vec<u8>) {
     let (mut key, mut ref_counter) = (Vec::new(), Vec::new());
     key.extend(STORAGE_CODE_PREFIX);
@@ -163,6 +171,36 @@ pub fn get_code(code_hash: H256) -> Option<Vec<u8>> {
 
 pub fn set_code(code_hash: H256, code: &[u8]) {
     sp_io::storage::set(&code_key(code_hash).0, code)
+}
+
+pub enum ProgramState {
+    Uninitialized,
+    Initialized,
+}
+
+impl From<bool> for ProgramState {
+    fn from(inited: bool) -> Self {
+        if inited {
+            ProgramState::Initialized
+        } else {
+            ProgramState::Uninitialized
+        }
+    }
+}
+
+pub fn get_program_state(id: H256) -> Option<ProgramState> {
+    sp_io::storage::get(&program_state_key(id)).and_then(|bytes| {
+        bool::decode(&mut &bytes[..])
+            .ok()
+            .map(|inited| inited.into())
+    })
+}
+
+pub fn set_program_state(id: H256, state: ProgramState) {
+    sp_io::storage::set(
+        &program_state_key(id),
+        &matches!(state, ProgramState::Initialized).encode(),
+    )
 }
 
 fn get_code_refs(code_hash: H256) -> u32 {
