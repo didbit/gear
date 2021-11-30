@@ -429,10 +429,12 @@ where
     SC: storage::StorageCarrier,
     storage::Storage<SC::PS>: CollectState,
 {
-    match runner::init_fixture::<SC>(storage, test, fixture_no) {
+    let mut program_state: HashMap<ProgramId, bool> = Default::default();
+
+    match runner::init_fixture::<SC>(storage, test, fixture_no, &mut program_state) {
         Ok((runner, messages, log)) => {
             let last_exp_steps = test.fixtures[fixture_no].expected.last().unwrap().step;
-            let results = runner::run(runner, messages.into(), log, last_exp_steps);
+            let results = runner::run(runner, messages.into(), log, last_exp_steps, &mut program_state);
 
             let mut errors = Vec::new();
             for exp in &test.fixtures[fixture_no].expected {

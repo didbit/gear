@@ -29,7 +29,7 @@ use gear_core_runner::{Config, ExecutionOutcome, ExtMessage, InitializeProgramIn
 use gear_node_runner::{Ext, ExtStorage};
 use sp_core::{crypto::Ss58Codec, hexdisplay::AsBytesRef, sr25519::Public};
 use sp_keyring::sr25519::Keyring;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Write;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -126,6 +126,7 @@ pub fn init_fixture<SC: StorageCarrier>(
     storage: Storage<SC::PS>,
     test: &Test,
     fixture_no: usize,
+    program_state: &mut HashMap<ProgramId, bool>,
 ) -> anyhow::Result<(WasmRunner<SC>, Vec<Message>, Vec<Message>)> {
     let storage2 = storage.clone();
     let mut runner = Runner::new(
@@ -180,8 +181,16 @@ pub fn init_fixture<SC: StorageCarrier>(
             },
         })?;
 
-        if let ExecutionOutcome::Trap(explanation) = result.outcome {
-            return Err(anyhow::anyhow!("Trap during `init`: {:?}", explanation));
+        match result.outcome {
+            ExecutionOutcome::Trap(explanation) => {
+                return Err(anyhow::anyhow!("Trap during `init`: {:?}", explanation))
+            }
+            ExecutionOutcome::Normal => {
+                program_state.insert(program_id, true);
+            }
+            ExecutionOutcome::Waiting => {
+                program_state.insert(program_id, false);
+            }
         }
 
         result.messages.into_iter().for_each(|m| {
@@ -276,6 +285,7 @@ pub fn run<SC: StorageCarrier, E: Environment<Ext>>(
     mut messages: VecDeque<Message>,
     mut log: Vec<Message>,
     steps: Option<usize>,
+    program_state: &mut HashMap<ProgramId, bool>,
 ) -> Vec<(FinalState, anyhow::Result<()>)>
 where
     Storage<SC::PS>: CollectState,
@@ -301,25 +311,27 @@ where
             runner.set_block_timestamp(timestamp as _);
 
             if let Some(m) = messages.pop_front() {
-                let mut run_result = runner.run_next(m);
-                runner.process_wait_list(&mut run_result);
+                if m.reply().is_some() || *program_state.get(&m.dest()).unwrap_or(&false) {
+                    let mut run_result = runner.run_next(m);
+                    runner.process_wait_list(&mut run_result);
 
-                log::info!("step: {}", step_no + 1);
+                    log::info!("step: {}", step_no + 1);
 
-                if run_result.any_traps() && step_no + 1 == steps {
-                    _result = Err(anyhow::anyhow!("Runner resulted in a trap"));
+                    if run_result.any_traps() && step_no + 1 == steps {
+                        _result = Err(anyhow::anyhow!("Runner resulted in a trap"));
+                    }
+
+                    messages.append(&mut run_result.messages.into());
+                    log.append(&mut run_result.log);
+                } else {
+                    log.push(m);
                 }
-
-                messages.append(&mut run_result.messages.into());
-                log.append(&mut run_result.log);
             }
 
             let storage = runner.storage();
-
             let mut final_state = storage.collect();
 
             final_state.messages = messages.clone().into();
-
             final_state.log = log.clone();
 
             results.push((final_state, Ok(())));
