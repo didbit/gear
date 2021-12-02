@@ -118,7 +118,7 @@ pub fn process<E: Environment<Ext>>(
     // for details
     let (mut runner, _) = ExtRunner::<E>::builder().block_info(block_info).build();
 
-    Ok(runner.run_next(message.into()).into())
+    Ok(runner.run_next(message.into(), None).into())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -200,7 +200,7 @@ pub fn gas_spent<E: Environment<Ext>>(
     let mut total_gas_spent = 0;
 
     while let Some(message) = messages.pop_front() {
-        let mut run_result = runner.run_next(message);
+        let mut run_result = runner.run_next(message, None);
         for new_message in run_result.messages.drain(..) {
             messages.push_back(new_message);
         }

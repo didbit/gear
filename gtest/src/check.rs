@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::js::{MetaData, MetaType};
-use crate::runner::{self, CollectState};
+use crate::runner::{self, CollectState, ProgramState};
 use crate::sample::{self, AllocationExpectationKind, AllocationFilter, PayloadVariant, Test};
 use anyhow::anyhow;
 use colored::{ColoredString, Colorize};
@@ -429,7 +429,7 @@ where
     SC: storage::StorageCarrier,
     storage::Storage<SC::PS>: CollectState,
 {
-    let mut program_state: HashMap<ProgramId, bool> = Default::default();
+    let mut program_state: ProgramState = Default::default();
 
     match runner::init_fixture::<SC>(storage, test, fixture_no, &mut program_state) {
         Ok((runner, messages, log)) => {

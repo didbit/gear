@@ -21,11 +21,11 @@ use crate::sample::{PayloadVariant, Test};
 use gear_backend_common::Environment;
 use gear_core::storage::ProgramStorage;
 use gear_core::{
-    message::Message,
+    message::{Message, MessageId},
     program::{Program, ProgramId},
     storage::{InMemoryStorage, Storage, StorageCarrier},
 };
-use gear_core_runner::{Config, ExecutionOutcome, ExtMessage, InitializeProgramInfo, Runner};
+use gear_core_runner::{Config, ExecutionOutcome, ExtMessage, InitializeProgramInfo, Runner, RunNextResult, RunNextInit};
 use gear_node_runner::{Ext, ExtStorage};
 use sp_core::{crypto::Ss58Codec, hexdisplay::AsBytesRef, sr25519::Public};
 use sp_keyring::sr25519::Keyring;
@@ -37,6 +37,29 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use regex::Regex;
 
 type WasmRunner<SC> = Runner<SC, gear_backend_wasmtime::WasmtimeEnvironment<Ext>>;
+
+pub(crate) type ProgramState = HashMap<ProgramId, Option<MessageId>>;
+
+pub(crate) fn is_inited(state: &ProgramState, program: &ProgramId) -> Option<bool> {
+    let init_message = state.get(program);
+    init_message
+        .map(|m| {
+            m.is_none()
+        })
+}
+
+pub(crate) fn get_awoken_init_message(state: &ProgramState, program: &ProgramId) -> Option<MessageId> {
+    let init_message = state.get(program).unwrap();
+    *init_message
+}
+
+pub(crate) fn set_program_inited(state: &mut ProgramState, program: ProgramId) {
+    state.insert(program, None);
+}
+
+pub(crate) fn set_program_uninited(state: &mut ProgramState, program: ProgramId, message: MessageId) {
+    state.insert(program, Some(message));
+}
 
 fn encode_hex(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -126,7 +149,7 @@ pub fn init_fixture<SC: StorageCarrier>(
     storage: Storage<SC::PS>,
     test: &Test,
     fixture_no: usize,
-    program_state: &mut HashMap<ProgramId, bool>,
+    program_state: &mut ProgramState,
 ) -> anyhow::Result<(WasmRunner<SC>, Vec<Message>, Vec<Message>)> {
     let storage2 = storage.clone();
     let mut runner = Runner::new(
@@ -169,6 +192,15 @@ pub fn init_fixture<SC: StorageCarrier>(
 
         let message_id = nonce.into();
         let program_id = program.id.to_program_id();
+
+        let message = Message::new(message_id,
+            init_source,
+            program_id,
+            init_message.clone().into(),
+            program.init_gas_limit.unwrap_or(u64::MAX),
+            program.init_value.unwrap_or(0) as _,
+        );
+
         let result = runner.init_program(InitializeProgramInfo {
             new_program_id: program_id,
             source_id: init_source,
@@ -186,12 +218,15 @@ pub fn init_fixture<SC: StorageCarrier>(
                 return Err(anyhow::anyhow!("Trap during `init`: {:?}", explanation))
             }
             ExecutionOutcome::Normal => {
-                program_state.insert(program_id, true);
+                set_program_inited(program_state, program_id);
             }
             ExecutionOutcome::Waiting => {
-                program_state.insert(program_id, false);
+                set_program_uninited(program_state, program_id, message_id);
             }
         }
+
+        let mut next_result = RunNextResult::from_single(message, result.clone());
+        runner.process_wait_list(&mut next_result);
 
         result.messages.into_iter().for_each(|m| {
             let m = m.into_message(program_id);
@@ -285,7 +320,7 @@ pub fn run<SC: StorageCarrier, E: Environment<Ext>>(
     mut messages: VecDeque<Message>,
     mut log: Vec<Message>,
     steps: Option<usize>,
-    program_state: &mut HashMap<ProgramId, bool>,
+    program_state: &mut ProgramState,
 ) -> Vec<(FinalState, anyhow::Result<()>)>
 where
     Storage<SC::PS>: CollectState,
@@ -311,8 +346,20 @@ where
             runner.set_block_timestamp(timestamp as _);
 
             if let Some(m) = messages.pop_front() {
-                if m.reply().is_some() || *program_state.get(&m.dest()).unwrap_or(&false) {
-                    let mut run_result = runner.run_next(m);
+                if m.reply().is_some() || is_inited(program_state, &m.dest()).unwrap() {
+                    let mut run_result = runner.run_next(m, None);
+                    runner.process_wait_list(&mut run_result);
+
+                    log::info!("step: {}", step_no + 1);
+
+                    if run_result.any_traps() && step_no + 1 == steps {
+                        _result = Err(anyhow::anyhow!("Runner resulted in a trap"));
+                    }
+
+                    messages.append(&mut run_result.messages.into());
+                    log.append(&mut run_result.log);
+                } else if m.id() == get_awoken_init_message(program_state, &m.dest()).unwrap() {
+                    let mut run_result = runner.run_next(m, Some(RunNextInit));
                     runner.process_wait_list(&mut run_result);
 
                     log::info!("step: {}", step_no + 1);
@@ -338,7 +385,7 @@ where
         }
     } else {
         while let Some(m) = messages.pop_front() {
-            let mut run_result = runner.run_next(m);
+            let mut run_result = runner.run_next(m, None);
             runner.process_wait_list(&mut run_result);
 
             messages.append(&mut run_result.messages.into());

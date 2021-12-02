@@ -54,6 +54,8 @@ pub struct Config {
     pub load_page_cost: u64,
 }
 
+pub struct RunNextInit;
+
 const EXIT_CODE_PANIC: i32 = 1;
 
 impl Default for Config {
@@ -243,7 +245,7 @@ impl<SC: StorageCarrier, E: Environment<Ext>> Runner<SC, E> {
     ///
     /// Runner will return actual number of messages that was handled.
     /// Messages with no destination won't be handled.
-    pub fn run_next(&mut self, message: Message) -> RunNextResult {
+    pub fn run_next(&mut self, message: Message, entry: Option<RunNextInit>) -> RunNextResult {
         let gas_limit = message.gas_limit();
         let message_source = message.source();
         let message_dest = message.dest();
@@ -289,7 +291,9 @@ impl<SC: StorageCarrier, E: Environment<Ext>> Runner<SC, E> {
             &mut context,
             &instrumented_code,
             &mut program,
-            if message.reply().is_some() {
+            if entry.is_some() {
+                EntryPoint::Init
+            } else if message.reply().is_some() {
                 EntryPoint::HandleReply
             } else {
                 EntryPoint::Handle
