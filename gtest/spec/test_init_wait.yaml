@@ -1,0 +1,38 @@
+title: Ping-pong
+
+programs:
+  - id: 1
+    path: target/wasm32-unknown-unknown/release/demo_ping.wasm
+
+  - id: 2
+    path: target/wasm32-unknown-unknown/release/demo_init_wait.wasm
+    source:
+      kind: id
+      value: 1
+
+fixtures:
+  - title: ping-pong
+
+    messages: []
+
+    expected:
+      - step: 1
+        messages:
+          - destination: 2
+            payload:
+              kind: utf-8
+              value: PONG
+        log: []
+
+      - step: 2
+        messages:
+          - destination: 2
+        log: []
+
+      - step: 3
+        messages: []
+        log: []
+
+      - step: 4
+        messages: []
+        log: []

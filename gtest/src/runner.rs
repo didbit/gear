@@ -151,7 +151,6 @@ pub fn init_fixture<SC: StorageCarrier>(
     fixture_no: usize,
     program_state: &mut ProgramState,
 ) -> anyhow::Result<(WasmRunner<SC>, Vec<Message>, Vec<Message>)> {
-    let storage2 = storage.clone();
     let mut runner = Runner::new(
         &Config::default(),
         storage,
@@ -228,17 +227,19 @@ pub fn init_fixture<SC: StorageCarrier>(
         let mut next_result = RunNextResult::from_single(message, result.clone());
         runner.process_wait_list(&mut next_result);
 
+        let storage: Storage<SC::PS> = runner.storage();
+        let storage = &storage.program_storage;
         result.messages.into_iter().for_each(|m| {
             let m = m.into_message(program_id);
-            if !storage2.program_storage.exists(m.dest()) {
+            if !storage.exists(m.dest()) {
                 log.push(m.clone());
+            } else {
+                messages.push(m);
             }
-
-            messages.push(m);
         });
 
         if let Some(m) = result.reply {
-            if !storage2.program_storage.exists(init_source) {
+            if !storage.exists(init_source) {
                 log.push(m.into_message(message_id, program_id, init_source));
             }
         }
