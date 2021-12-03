@@ -475,7 +475,7 @@ impl RunnerContext {
         let mut log = vec![];
         let runner = self.runner();
         while let Some(message) = messages.pop() {
-            let mut run_result = runner.run_next(message);
+            let mut run_result = runner.run_next(message, None);
             runner.process_wait_list(&mut run_result);
             for new_message in run_result.messages.drain(..) {
                 messages.push(new_message);

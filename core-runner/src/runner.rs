@@ -54,6 +54,7 @@ pub struct Config {
     pub load_page_cost: u64,
 }
 
+/// Use to specify that awoken init should be called.
 pub struct RunNextInit;
 
 const EXIT_CODE_PANIC: i32 = 1;
@@ -879,7 +880,7 @@ mod tests {
             reply: None,
         };
 
-        assert!(runner.run_next(message).any_traps());
+        assert!(runner.run_next(message, None).any_traps());
 
         let msg = vec![
             1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 2, 4, 6, 8, 10, 12, 14, 16,
@@ -896,7 +897,7 @@ mod tests {
             reply: Some((MessageId::from_slice(&msg), 0)),
         };
 
-        assert!(!runner.run_next(message).any_traps()); // this is handling of automatic reply when first message was trapped; it will also fail
+        assert!(!runner.run_next(message, None).any_traps()); // this is handling of automatic reply when first message was trapped; it will also fail
 
         let InMemoryStorage {
             program_storage, ..
@@ -997,7 +998,7 @@ mod tests {
             reply: None,
         };
 
-        let run_result = runner.run_next(message);
+        let run_result = runner.run_next(message, None);
 
         assert_eq!(
             run_result
@@ -1087,7 +1088,7 @@ mod tests {
             reply: None,
         };
 
-        let run_result = runner.run_next(message);
+        let run_result = runner.run_next(message, None);
 
         assert_eq!(
             run_result
@@ -1143,7 +1144,7 @@ mod tests {
             reply: None,
         };
 
-        let mut result = runner.run_next(message);
+        let mut result = runner.run_next(message, None);
 
         let InMemoryStorage { program_storage: _ } = runner.complete();
 
@@ -1203,7 +1204,7 @@ mod tests {
             reply: None,
         };
 
-        let result = runner.run_next(message);
+        let result = runner.run_next(message, None);
         assert_eq!(result.gas_spent.len(), 1);
 
         let (gas_available, ..) = result
@@ -1267,7 +1268,7 @@ mod tests {
         // Charge 1000 of gas for initial memory.
         assert_eq!(init_result.gas_spent, runner.init_cost() * 1);
 
-        let result = runner.run_next(message);
+        let result = runner.run_next(message, None);
 
         assert_eq!(
             result.gas_spent[0].1,
@@ -1314,7 +1315,7 @@ mod tests {
             reply: None,
         };
 
-        let run_result = runner.run_next(message);
+        let run_result = runner.run_next(message, None);
 
         assert_eq!(run_result.gas_spent[0].1, 10_000);
     }

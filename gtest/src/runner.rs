@@ -25,7 +25,9 @@ use gear_core::{
     program::{Program, ProgramId},
     storage::{InMemoryStorage, Storage, StorageCarrier},
 };
-use gear_core_runner::{Config, ExecutionOutcome, ExtMessage, InitializeProgramInfo, Runner, RunNextResult, RunNextInit};
+use gear_core_runner::{
+    Config, ExecutionOutcome, ExtMessage, InitializeProgramInfo, RunNextInit, RunNextResult, Runner,
+};
 use gear_node_runner::{Ext, ExtStorage};
 use sp_core::{crypto::Ss58Codec, hexdisplay::AsBytesRef, sr25519::Public};
 use sp_keyring::sr25519::Keyring;
@@ -42,13 +44,13 @@ pub(crate) type ProgramState = HashMap<ProgramId, Option<MessageId>>;
 
 pub(crate) fn is_inited(state: &ProgramState, program: &ProgramId) -> Option<bool> {
     let init_message = state.get(program);
-    init_message
-        .map(|m| {
-            m.is_none()
-        })
+    init_message.map(|m| m.is_none())
 }
 
-pub(crate) fn get_awoken_init_message(state: &ProgramState, program: &ProgramId) -> Option<MessageId> {
+pub(crate) fn get_awoken_init_message(
+    state: &ProgramState,
+    program: &ProgramId,
+) -> Option<MessageId> {
     let init_message = state.get(program).unwrap();
     *init_message
 }
@@ -57,7 +59,11 @@ pub(crate) fn set_program_inited(state: &mut ProgramState, program: ProgramId) {
     state.insert(program, None);
 }
 
-pub(crate) fn set_program_uninited(state: &mut ProgramState, program: ProgramId, message: MessageId) {
+pub(crate) fn set_program_uninited(
+    state: &mut ProgramState,
+    program: ProgramId,
+    message: MessageId,
+) {
     state.insert(program, Some(message));
 }
 
@@ -192,7 +198,8 @@ pub fn init_fixture<SC: StorageCarrier>(
         let message_id = nonce.into();
         let program_id = program.id.to_program_id();
 
-        let message = Message::new(message_id,
+        let message = Message::new(
+            message_id,
             init_source,
             program_id,
             init_message.clone().into(),
@@ -232,7 +239,7 @@ pub fn init_fixture<SC: StorageCarrier>(
         result.messages.into_iter().for_each(|m| {
             let m = m.into_message(program_id);
             if !storage.exists(m.dest()) {
-                log.push(m.clone());
+                log.push(m);
             } else {
                 messages.push(m);
             }
