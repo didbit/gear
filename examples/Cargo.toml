@@ -18,6 +18,7 @@ members = [
     "fungible-token",
     "non-fungible-token",
     "futures-unordered",
+    "init-wait",
     "mem",
     "guestbook",
     "gui-test",

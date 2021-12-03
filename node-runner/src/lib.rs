@@ -27,7 +27,7 @@ use sp_core::H256;
 use gear_core::{
     message::{Message, MessageId},
     program::ProgramId,
-    storage::Storage,
+    storage::{ProgramStorage, Storage},
 };
 
 use gear_backend_common::Environment;
@@ -54,11 +54,10 @@ pub struct ExecutionReport {
     pub messages: Vec<gear_common::Message>,
     pub program_id: H256,
     pub log: Vec<gear_common::Message>,
-    pub gas_refunds: Vec<(H256, u64)>,
     pub gas_charges: Vec<(H256, u64)>,
     pub outcomes: Vec<(H256, Result<(), Vec<u8>>)>,
     pub wait_list: Vec<gear_common::Message>,
-    pub awakening: Vec<(H256, u64)>,
+    pub awakening: Vec<H256>,
 }
 
 impl From<RunNextResult> for ExecutionReport {
@@ -67,7 +66,6 @@ impl From<RunNextResult> for ExecutionReport {
             messages,
             prog_id,
             log,
-            gas_left,
             gas_spent,
             outcomes,
             wait_list,
@@ -79,17 +77,13 @@ impl From<RunNextResult> for ExecutionReport {
         let wait_list = wait_list.into_iter().map(Into::into).collect();
         let awakening = awakening
             .into_iter()
-            .map(|(msg_id, gas_limit)| (H256::from_slice(msg_id.as_slice()), gas_limit))
+            .map(|msg_id| H256::from_slice(msg_id.as_slice()))
             .collect();
 
         ExecutionReport {
             messages,
             program_id: H256::from_slice(prog_id.as_slice()),
             log,
-            gas_refunds: gas_left
-                .into_iter()
-                .map(|(program_id, gas_left)| (H256::from_slice(program_id.as_slice()), gas_left))
-                .collect(),
             gas_charges: gas_spent
                 .into_iter()
                 .map(|(program_id, gas_left)| (H256::from_slice(program_id.as_slice()), gas_left))
@@ -119,7 +113,10 @@ pub fn process<E: Environment<Ext>>(
     message: gear_common::Message,
     block_info: BlockInfo,
 ) -> Result<ExecutionReport, Error> {
-    let mut runner = ExtRunner::<E>::builder().block_info(block_info).build();
+    // TODO: it's not required to process possible errors since
+    // builder doesn't contain any program here. Check `program` method
+    // for details
+    let (mut runner, _) = ExtRunner::<E>::builder().block_info(block_info).build();
 
     Ok(runner.run_next(message.into()).into())
 }
@@ -135,7 +132,10 @@ pub fn init_program<E: Environment<Ext>>(
     value: u128,
     block_info: BlockInfo,
 ) -> Result<ExecutionReport, Error> {
-    let mut runner = ExtRunner::<E>::builder().block_info(block_info).build();
+    // TODO: it's not required to process possible errors since
+    // builder doesn't contain any program here. Check `program` method
+    // for details
+    let (mut runner, _) = ExtRunner::<E>::builder().block_info(block_info).build();
 
     let init_message_id = MessageId::from_slice(&init_message_id[..]);
     let program_id = ProgramId::from_slice(&program_id[..]);
@@ -166,7 +166,25 @@ pub fn init_program<E: Environment<Ext>>(
         value,
         reply: None,
     };
-    let result = RunNextResult::from_single(init_message, run_result);
+    let mut result = RunNextResult::from_single(init_message, run_result.clone());
+
+    for message in run_result.messages {
+        let m = message.into_message(program_id);
+        if runner.storage().program_storage.exists(m.dest()) {
+            result.messages.push(m);
+        } else {
+            result.log.push(m);
+        }
+    }
+
+    if let Some(m) = run_result.reply {
+        let m = m.into_message(init_message_id, program_id, source_id);
+        if runner.storage().program_storage.exists(m.dest()) {
+            result.messages.push(m);
+        } else {
+            result.log.push(m);
+        }
+    }
 
     Ok(result.into())
 }

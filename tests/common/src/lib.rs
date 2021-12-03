@@ -18,6 +18,7 @@
 
 use codec::{Decode, Encode, Error as CodecError};
 use gear_backend_wasmtime::WasmtimeEnvironment;
+use gear_core::storage::ProgramStorage;
 use gear_core::{
     message::{Message, MessageId},
     program::ProgramId,
@@ -205,7 +206,6 @@ impl From<ExecutionOutcome> for RunResult {
 pub struct RunReport<D> {
     pub result: RunResult,
     pub response: Option<Result<D, Error>>,
-    pub gas_left: u64,
     pub gas_spent: u64,
 }
 
@@ -224,8 +224,7 @@ pub struct RunnerContext {
     message_queue: Vec<Message>,
     log: Vec<Message>,
     outcomes: BTreeMap<MessageId, ExecutionOutcome>,
-    gas_left: BTreeMap<ProgramId, u64>,
-    gas_spent: BTreeMap<ProgramId, u64>,
+    gas_spent: BTreeMap<MessageId, u64>,
 }
 
 impl RunnerContext {
@@ -256,12 +255,21 @@ impl RunnerContext {
         P: Into<InitProgram>,
     {
         let info = init_data.into().into_init_program_info(self);
+        let program_id = info.new_program_id;
 
-        self.runner()
+        let result = self
+            .runner()
             .init_program(info)
             .expect("Failed to init program");
 
-        let mut log = self.runner().log().get().to_vec();
+        let mut log = vec![];
+        result.messages.into_iter().for_each(|m| {
+            let m = m.into_message(program_id);
+            if !self.runner().storage().program_storage.exists(m.dest()) {
+                log.push(m);
+            }
+        });
+
         self.log.append(&mut log);
     }
 
@@ -272,12 +280,25 @@ impl RunnerContext {
     {
         let info = init_data.into().into_init_program_info(self);
         let message_id = info.message.id;
+        let program_id = info.new_program_id;
 
-        self.runner()
+        let result = self
+            .runner()
             .init_program(info)
             .expect("Failed to init program");
 
-        let mut log = self.runner().log().get().to_vec();
+        let mut log = vec![];
+        result.messages.into_iter().for_each(|m| {
+            let m = m.into_message(program_id);
+            if !self.runner().storage().program_storage.exists(m.dest()) {
+                log.push(m);
+            }
+        });
+
+        if let Some(m) = result.reply {
+            log.push(m.into_message(message_id, program_id, 0.into()));
+        }
+
         self.log.append(&mut log);
 
         reply_or_panic(self.get_response_to(message_id))
@@ -289,6 +310,7 @@ impl RunnerContext {
         D: Decode,
     {
         let info = init_data.into().into_init_program_info(self);
+        let program_id = info.new_program_id;
         let message_id = info.message.id;
 
         let result = self
@@ -296,7 +318,14 @@ impl RunnerContext {
             .init_program(info)
             .expect("Failed to init program");
 
-        let mut log = self.runner().log().get().to_vec();
+        let mut log = vec![];
+        result.messages.into_iter().for_each(|m| {
+            let m = m.into_message(program_id);
+            if !self.runner().storage().program_storage.exists(m.dest()) {
+                log.push(m);
+            }
+        });
+
         self.log.append(&mut log);
 
         let response = self.get_response_to(message_id);
@@ -304,7 +333,6 @@ impl RunnerContext {
         RunReport {
             result: result.outcome.into(),
             response,
-            gas_left: result.gas_left,
             gas_spent: result.gas_spent,
         }
     }
@@ -328,7 +356,6 @@ impl RunnerContext {
     {
         let message = message.into().into_message(self);
         let message_id = message.id;
-        let program_id = message.source;
 
         self.run(message);
 
@@ -337,14 +364,9 @@ impl RunnerContext {
             .remove(&message_id)
             .expect("Unable to get message outcome");
 
-        let gas_left = self
-            .gas_left
-            .remove(&program_id)
-            .expect("Unable to get remaining gas for program");
-
         let gas_spent = self
             .gas_spent
-            .remove(&program_id)
+            .remove(&message_id)
             .expect("Unable to get spent gas for program");
 
         let response = self.get_response_to(message_id);
@@ -352,7 +374,6 @@ impl RunnerContext {
         RunReport {
             response,
             result: outcome.into(),
-            gas_left,
             gas_spent,
         }
     }
@@ -449,9 +470,9 @@ impl RunnerContext {
         let mut messages: Vec<_> = self.message_queue.drain(..).collect();
         messages.push(message);
         let mut outcomes = BTreeMap::new();
-        let mut gas_left = BTreeMap::new();
         let mut gas_spent = BTreeMap::new();
 
+        let mut log = vec![];
         let runner = self.runner();
         while let Some(message) = messages.pop() {
             let mut run_result = runner.run_next(message);
@@ -462,24 +483,19 @@ impl RunnerContext {
             for (id, outcome) in run_result.outcomes {
                 outcomes.insert(id, outcome);
             }
-            for (id, gas) in run_result.gas_left {
-                gas_left.insert(id, gas);
-            }
             for (id, gas) in run_result.gas_spent {
                 gas_spent.insert(id, gas);
             }
+
+            log.append(&mut run_result.log);
         }
 
-        let mut log = runner.log().get().to_vec();
         self.log.append(&mut log);
 
         self.message_queue.append(&mut messages);
 
         for (id, outcome) in outcomes {
             self.outcomes.insert(id, outcome);
-        }
-        for (id, gas) in gas_left {
-            self.gas_left.insert(id, gas);
         }
         for (id, gas) in gas_spent {
             self.gas_spent.insert(id, gas);
@@ -506,7 +522,6 @@ impl Default for RunnerContext {
             message_queue: Vec::new(),
             log: Vec::new(),
             outcomes: BTreeMap::new(),
-            gas_left: BTreeMap::new(),
             gas_spent: BTreeMap::new(),
         }
     }

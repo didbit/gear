@@ -40,6 +40,7 @@ impl GearTestCmd {
                     false,
                     false,
                     false,
+                    false,
                     || {
                         sp_io::storage::clear_prefix(gear_common::STORAGE_CODE_PREFIX, None);
                         sp_io::storage::clear_prefix(gear_common::STORAGE_MESSAGE_PREFIX, None);
@@ -47,7 +48,6 @@ impl GearTestCmd {
                         sp_io::storage::clear_prefix(gear_common::STORAGE_WAITLIST_PREFIX, None);
                         gear_core::storage::Storage {
                             program_storage: runner::ext::ExtProgramStorage,
-                            log: Default::default(),
                         }
                     },
                     Some(Box::new(&new_test_ext)),
