@@ -4174,6 +4174,7 @@ dependencies = [
  "sp-runtime",
  "sp-std",
  "tests-distributor",
+ "tests-init-wait",
  "wabt",
 ]
 

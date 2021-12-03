@@ -1650,3 +1650,37 @@ fn distributor_distribute() {
         assert_eq!(balance_initial, final_balance);
     });
 }
+
+#[test]
+fn uninitialized_program_mustnot_receive_messages() {
+    use tests_init_wait::WASM_BINARY_BLOATY;
+
+    init_logger();
+    new_test_ext().execute_with(|| {
+        System::reset_events();
+
+        assert_ok!(Pallet::<Test>::submit_program(
+            Origin::signed(1).into(),
+            WASM_BINARY_BLOATY.expect("Wasm binary missing!").to_vec(),
+            vec![],
+            Vec::new(),
+            100_000_000u64,
+            0_u128
+        ));
+
+        let messages: Vec<IntermediateMessage> =
+            Gear::message_queue().expect("There should be a message in the queue");
+        let program_id = match &messages[0] {
+            IntermediateMessage::InitProgram { program_id, .. } => *program_id,
+            _ => Default::default(),
+        };
+        assert!(common::get_program(program_id).is_none());
+        assert!(ProgramsLimbo::<Test>::get(program_id).is_none());
+
+        run_to_block(2, None);
+
+        // Expect the program to be in PS by now
+        assert!(common::get_program(program_id).is_some());
+        assert!(ProgramsLimbo::<Test>::get(program_id).is_none());
+    })
+}
