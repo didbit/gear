@@ -360,8 +360,14 @@ where
                     messages.append(&mut run_result.messages.into());
                     log.append(&mut run_result.log);
                 } else if m.id() == get_awoken_init_message(program_state, &m.dest()).unwrap() {
+                    let m_id = m.id();
+                    let p_id = m.dest();
                     let mut run_result = runner.run_next(m, Some(RunNextInit));
                     runner.process_wait_list(&mut run_result);
+
+                    if let Some(ExecutionOutcome::Normal) = run_result.outcomes.get(&m_id) {
+                        set_program_inited(program_state, p_id);
+                    }
 
                     log::info!("step: {}", step_no + 1);
 
