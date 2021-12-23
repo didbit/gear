@@ -30,6 +30,8 @@ use gear_core::{
     memory::{Memory, PageBuf, PageNumber},
 };
 
+// Dummy: create program from program
+
 pub trait Environment<E: Ext>: Default + Sized {
     fn new() -> Self;
 
