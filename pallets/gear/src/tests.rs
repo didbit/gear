@@ -1156,7 +1156,7 @@ fn distributor_distribute() {
     });
 }
 
-// TODO #512 All `submit_code` tests should be changed to testing program creation from program logic.
+// TODO #245 All `submit_code` tests should be changed to testing program creation from program logic.
 
 #[test]
 fn test_code_submission_pass() {
@@ -1363,12 +1363,13 @@ mod utils {
     }
 
     pub(super) fn generate_program_id(code: &[u8], salt: &[u8]) -> H256 {
-        // TODO #512
-        let mut data = Vec::new();
-        code.encode_to(&mut data);
+        let code_hash = sp_io::hashing::blake2_256(code);
+        let mut data = Vec::with_capacity(code_hash.len() + salt.len());
+
+        code_hash.encode_to(&mut data);
         salt.encode_to(&mut data);
 
-        sp_io::hashing::blake2_256(&data[..]).into()
+        sp_io::hashing::blake2_256(&data).into()
     }
 
     pub(super) fn send_default_message(from: AccountId, to: H256) -> DispatchResultWithPostInfo {

@@ -1,0 +1,17 @@
+title: create_program sys-call test
+
+programs:
+  - id: 1
+    path: target/wasm32-unknown-unknown/release/demo_create_program.wasm
+
+fixtures:
+  - title: create_program test
+    messages:
+      - destination: 1
+    expected:
+      - step: 2
+        log:
+          - destination:
+              kind: ss58
+              # computed manually
+              value: 5FbQCiePSZy1benVNX8LkFxeNPz7uiqhYyYjgYy7tEWmPHD4

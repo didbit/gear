@@ -92,7 +92,7 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
             let result = ctx
                 .ext
                 .with(|ext: &mut E| -> Result<(), &'static str> {
-                    let dest: ProgramId = funcs::get_id(ext, program_id_ptr).into();
+                    let dest: ProgramId = funcs::get_bytes32(ext, program_id_ptr).into();
                     let payload = funcs::get_vec(ext, payload_ptr, payload_len);
                     let value = funcs::get_u128(ext, value_ptr);
                     let message_id = ext.send(OutgoingPacket::new(
@@ -139,7 +139,7 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
 
             ctx.ext
                 .with(|ext: &mut E| -> Result<(), &'static str> {
-                    let dest: ProgramId = funcs::get_id(ext, program_id_ptr).into();
+                    let dest: ProgramId = funcs::get_bytes32(ext, program_id_ptr).into();
                     let value = funcs::get_u128(ext, value_ptr);
                     let message_id = ext.send_commit(
                         handle_ptr as _,
@@ -576,7 +576,7 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
             };
             ctx.ext
                 .with(|ext: &mut E| {
-                    let waker_id: MessageId = funcs::get_id(ext, waker_id_ptr).into();
+                    let waker_id: MessageId = funcs::get_bytes32(ext, waker_id_ptr).into();
                     ext.wake(waker_id)
                 })
                 .map(|_| Ok(ReturnValue::Unit))
@@ -584,6 +584,67 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
                     ctx.trap_reason = Some(err);
                     HostError
                 })?
+        }
+
+        fn create_program<E: Ext>(
+            ctx: &mut Runtime<E>,
+            args: &[Value],
+        ) -> Result<ReturnValue, HostError> {
+            let code_hash_ptr: i32 = match args[0] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+            let salt_ptr: i32 = match args[1] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+            let salt_len: i32 = match args[2] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+            let payload_ptr: i32 = match args[3] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+            let payload_len: i32 = match args[4] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+            let _gas_limit: i64 = match args[5] {
+                Value::I64(val) => val,
+                _ => return Err(HostError),
+            };
+            let value_ptr: i32 = match args[6] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+            let program_id_ptr: i32 = match args[7] {
+                Value::I32(val) => val,
+                _ => return Err(HostError),
+            };
+
+            let result = ctx
+                .ext
+                .with(|ext: &mut E| -> Result<(), &'static str> {
+                    let code_hash = funcs::get_bytes32(ext, code_hash_ptr);
+                    let salt = funcs::get_vec(ext, salt_ptr, salt_len);
+                    let _payload = funcs::get_vec(ext, payload_ptr, payload_len);
+                    let _value = funcs::get_u128(ext, value_ptr);
+                    let new_actor_id = {
+                        // todo #245, move id generation to core while using Codec::Encode
+                        let mut data = code_hash.to_vec();
+                        data.extend_from_slice(&salt);
+                        blake2_rfc::blake2b::blake2b(32, &[], &data)
+                    };
+                    ext.set_mem(program_id_ptr as isize as _, new_actor_id.as_bytes());
+                    Ok(())
+                })
+                .and_then(|res| res.map(|_| ReturnValue::Unit))
+                .map_err(|_err| {
+                    ctx.trap_reason = Some("Trapping: unable to create program");
+                    HostError
+                });
+            result
         }
 
         self.ext.set(ext);
@@ -619,6 +680,7 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
         env_builder.add_host_func("env", "gr_wait", wait);
         env_builder.add_host_func("env", "gr_wake", wake);
         env_builder.add_host_func("env", "gas", gas);
+        env_builder.add_host_func("env", "gr_create_program", create_program);
 
         let mut runtime = Runtime {
             ext: self.ext.clone(),
