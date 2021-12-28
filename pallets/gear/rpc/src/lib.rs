@@ -77,7 +77,8 @@ impl From<Error> for i64 {
     }
 }
 
-impl<C, Block, AccountId, ProgramId> GearApi<<Block as BlockT>::Hash, AccountId, ProgramId> for Gear<C, Block>
+impl<C, Block, AccountId, ProgramId> GearApi<<Block as BlockT>::Hash, AccountId, ProgramId>
+    for Gear<C, Block>
 where
     Block: BlockT,
     C: 'static + ProvideRuntimeApi<Block> + HeaderBackend<Block>,
