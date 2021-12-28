@@ -20,6 +20,7 @@ use crate::{
     configs::{AllocationsConfig, BlockInfo},
     id::BlakeMessageIdGenerator,
 };
+use codec::Encode;
 use gear_core::{
     env::Ext as EnvExt,
     gas::{ChargeResult, GasCounter},
@@ -262,5 +263,22 @@ impl EnvExt for Ext {
             .map_err(|_| "Unable to mark the message to be woken");
 
         self.return_and_store_err(result)
+    }
+
+    fn create_program(
+        &mut self,
+        code_hash: &[u8],
+        salt: &[u8],
+        _packet: OutgoingPacket,
+    ) -> ProgramId {
+        let program_id = {
+            let mut data = alloc::vec::Vec::with_capacity(code_hash.len() + salt.len());
+            code_hash.encode_to(&mut data);
+            salt.encode_to(&mut data);
+            ProgramId::from_slice(blake2_rfc::blake2b::blake2b(32, &[], &data).as_bytes())
+        };
+
+        // todo [sab]
+        program_id
     }
 }

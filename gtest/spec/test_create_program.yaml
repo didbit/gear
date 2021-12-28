@@ -14,4 +14,4 @@ fixtures:
           - destination:
               kind: ss58
               # computed manually
-              value: 5FbQCiePSZy1benVNX8LkFxeNPz7uiqhYyYjgYy7tEWmPHD4
+              value: 5Fv4eaBuUD4ezwDiAX9r11j6hncgdjAWKYG2A8Bwmz4guV9d

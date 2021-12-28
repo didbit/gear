@@ -102,10 +102,11 @@ pub fn get_program(id: ProgramId) -> Option<Program> {
     None
 }
 
+// todo [sab] выпиливай
 pub fn set_program(program: Program) {
     let code_hash = sp_io::hashing::blake2_256(program.code()).into();
     // This code is only used in tests and is redundant for
-    // production. TODO to be fixed in #512
+    // production. TODO to be fixed in #245
     if !crate::code_exists(code_hash) {
         crate::set_code(code_hash, program.code());
     }

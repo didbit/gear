@@ -610,7 +610,7 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
                 Value::I32(val) => val,
                 _ => return Err(HostError),
             };
-            let _gas_limit: i64 = match args[5] {
+            let gas_limit: i64 = match args[5] {
                 Value::I64(val) => val,
                 _ => return Err(HostError),
             };
@@ -628,15 +628,19 @@ impl<E: Ext + 'static> SandboxEnvironment<E> {
                 .with(|ext: &mut E| -> Result<(), &'static str> {
                     let code_hash = funcs::get_bytes32(ext, code_hash_ptr);
                     let salt = funcs::get_vec(ext, salt_ptr, salt_len);
-                    let _payload = funcs::get_vec(ext, payload_ptr, payload_len);
-                    let _value = funcs::get_u128(ext, value_ptr);
-                    let new_actor_id = {
-                        // todo #245, move id generation to core while using Codec::Encode
-                        let mut data = code_hash.to_vec();
-                        data.extend_from_slice(&salt);
-                        blake2_rfc::blake2b::blake2b(32, &[], &data)
-                    };
-                    ext.set_mem(program_id_ptr as isize as _, new_actor_id.as_bytes());
+                    let payload = funcs::get_vec(ext, payload_ptr, payload_len);
+                    let value = funcs::get_u128(ext, value_ptr);
+                    let new_actor_id = ext.create_program(
+                        code_hash.as_slice(),
+                        &salt,
+                        OutgoingPacket::new(
+                            Default::default(),
+                            payload.into(),
+                            gas_limit as _,
+                            value,
+                        ),
+                    );
+                    ext.set_mem(program_id_ptr as isize as _, new_actor_id.as_slice());
                     Ok(())
                 })
                 .and_then(|res| res.map(|_| ReturnValue::Unit))

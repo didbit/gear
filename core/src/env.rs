@@ -131,6 +131,14 @@ pub trait Ext {
 
     /// Wake the waiting message and move it to the processing queue.
     fn wake(&mut self, waker_id: MessageId) -> Result<(), &'static str>;
+
+    /// Send init message to create a new program
+    fn create_program(
+        &mut self,
+        code_hash: &[u8],
+        salt: &[u8],
+        packet: OutgoingPacket,
+    ) -> ProgramId;
 }
 
 /// Struct for interacting with Ext
