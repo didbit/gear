@@ -600,12 +600,14 @@ impl_runtime_apis! {
     }
 
     // Here we implement our custom runtime API.
-    impl pallet_gear_rpc_runtime_api::GearApi<Block, ProgramId> for Runtime {
+    impl pallet_gear_rpc_runtime_api::GearApi<Block, AccountId, ProgramId> for Runtime {
         fn get_gas_spent(
+            account_id: AccountId,
             program_id: ProgramId,
             payload: Vec<u8>,
         ) -> Option<u64> {
-            Gear::get_gas_spent(program_id, payload)
+            use gear_common::Origin;
+            Gear::get_gas_spent(account_id.into_origin(), program_id, payload)
         }
     }
 

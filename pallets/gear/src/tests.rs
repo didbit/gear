@@ -408,10 +408,10 @@ fn block_gas_limit_works() {
 
         // Count gas needed to process programs with default payload
         let expected_gas_msg_to_pid1 =
-            GearPallet::<Test>::get_gas_spent(pid1, EMPTY_PAYLOAD.to_vec())
+            GearPallet::<Test>::get_gas_spent(USER_1.into_origin(), pid1, EMPTY_PAYLOAD.to_vec())
                 .expect("internal error: get gas spent (pid1) failed");
         let expected_gas_msg_to_pid2 =
-            GearPallet::<Test>::get_gas_spent(pid2, EMPTY_PAYLOAD.to_vec())
+            GearPallet::<Test>::get_gas_spent(USER_1.into_origin(), pid2, EMPTY_PAYLOAD.to_vec())
                 .expect("internal error: get gas spent (pid2) failed");
 
         // TrapInHandle code kind is used because processing default payload in its
@@ -866,8 +866,12 @@ fn send_reply_expected_failure() {
         run_to_block(2, None);
 
         // increase LOW_BALANCE_USER balance a bit to allow him send message
-        let reply_gas_spent = GearPallet::<Test>::get_gas_spent(prog_id, EMPTY_PAYLOAD.to_vec())
-            .expect("program exists and not faulty");
+        let reply_gas_spent = GearPallet::<Test>::get_gas_spent(
+            USER_1.into_origin(),
+            prog_id,
+            EMPTY_PAYLOAD.to_vec(),
+        )
+        .expect("program exists and not faulty");
 
         assert_ok!(BalancesPallet::<Test>::transfer(
             Origin::signed(USER_1).into(),
@@ -1033,8 +1037,12 @@ fn claim_value_from_mailbox_works() {
             populate_mailbox_from_program(prog_id, USER_2, USER_1, 2, 0, gas_sent, value_sent);
 
         let gas_burned = GasConverter::gas_to_fee(
-            GearPallet::<Test>::get_gas_spent(prog_id, EMPTY_PAYLOAD.to_vec())
-                .expect("program exists and not faulty"),
+            GearPallet::<Test>::get_gas_spent(
+                USER_1.into_origin(),
+                prog_id,
+                EMPTY_PAYLOAD.to_vec(),
+            )
+            .expect("program exists and not faulty"),
         );
 
         run_to_block(3, None);

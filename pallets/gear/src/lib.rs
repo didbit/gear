@@ -272,7 +272,7 @@ pub mod pallet {
             .flatten()
         }
 
-        pub fn get_gas_spent(dest: H256, payload: Vec<u8>) -> Option<u64> {
+        pub fn get_gas_spent(source: H256, dest: H256, payload: Vec<u8>) -> Option<u64> {
             let mut ext_manager = ExtManager::<T>::new();
 
             let block_info = BlockInfo {
@@ -282,7 +282,7 @@ pub mod pallet {
 
             let mut messages: VecDeque<Message> = VecDeque::from([Message {
                 id: common::next_message_id(&payload),
-                source: 100001.into_origin(),
+                source,
                 dest,
                 gas_limit: u64::MAX,
                 payload,
