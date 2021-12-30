@@ -1071,7 +1071,7 @@ fn distributor_initialize() {
         let initial_balance = BalancesPallet::<Test>::free_balance(USER_1)
             + BalancesPallet::<Test>::free_balance(BLOCK_AUTHOR);
 
-        let program_id = generate_program_id(
+        let _program_id = generate_program_id(
             WASM_BINARY_BLOATY.expect("Wasm binary missing!"),
             DEFAULT_SALT,
         );
@@ -1086,14 +1086,6 @@ fn distributor_initialize() {
         ));
 
         run_to_block(2, None);
-
-        let prog = common::get_program(program_id).expect("Can't fail. Added above");
-
-        // TODO: Need to fix ValueTree issue, related to unability to unreserve unused gas.
-        // Now we gonna claim value from mailbox to force it's tree consumption.
-        let message_id = compute_program_message_id(program_id.as_bytes(), prog.nonce - 1);
-        let _ =
-            GearPallet::<Test>::claim_value_from_mailbox(Origin::signed(USER_1).into(), message_id);
 
         let final_balance = BalancesPallet::<Test>::free_balance(USER_1)
             + BalancesPallet::<Test>::free_balance(BLOCK_AUTHOR);
@@ -1127,11 +1119,12 @@ fn distributor_distribute() {
 
         let prog = common::get_program(program_id).expect("Can't fail. Added above");
 
-        // TODO: Need to fix ValueTree issue, related to unability to unreserve unused gas.
-        // Now we gonna claim value from mailbox to force it's tree consumption.
-        let message_id = compute_program_message_id(program_id.as_bytes(), prog.nonce - 1);
-        let _ =
-            GearPallet::<Test>::claim_value_from_mailbox(Origin::signed(USER_1).into(), message_id);
+        let intermediary_balance = BalancesPallet::<Test>::free_balance(USER_1)
+            + BalancesPallet::<Test>::free_balance(BLOCK_AUTHOR);
+
+        // Since the init reply message (still in USER_1's mailbox at this point) has 0 gas
+        // locked the balances should add up even without claiming value from mailbox
+        assert_eq!(initial_balance, intermediary_balance);
 
         assert_ok!(GearPallet::<Test>::send_message(
             Origin::signed(USER_1).into(),
@@ -1143,7 +1136,8 @@ fn distributor_distribute() {
 
         run_to_block(3, None);
 
-        // Now we gonna claim value from mailbox to force it's tree consumption.
+        // Now we must claim value from the mailbox to force it's tree consumption because
+        // the message in mailbox has a non-zero gas limit
         let message_id = compute_program_message_id(program_id.as_bytes(), prog.nonce);
         let _ =
             GearPallet::<Test>::claim_value_from_mailbox(Origin::signed(USER_1).into(), message_id);

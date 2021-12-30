@@ -124,43 +124,11 @@ impl ValueView {
         }
     }
 
-    fn check_consumed(self) -> ConsumeResult {
-        match self.node.origin {
-            ValueOrigin::Local(parent) => {
-                if self.node.consumed && self.node.refs == 0 {
-                    let mut parent_node = self
-                        .load_node(parent)
-                        .expect("Parent exist as link and should be loaded");
-
-                    assert!(
-                        parent_node.refs != 0,
-                        "parent node does not contain ref for the node that was created from it"
-                    );
-
-                    parent_node.refs -= 1;
-                    parent_node.inner = parent_node.inner.saturating_add(self.node.inner);
-
-                    self.save_node(parent, &parent_node);
-                    let result = self.new_from_node(parent, parent_node).check_consumed();
-                    self.delete();
-
-                    result
-                } else {
-                    ConsumeResult::None
-                }
-            }
-            ValueOrigin::External(external) => {
-                if self.node.refs == 0 && self.node.consumed {
-                    let inner = self.node.inner;
-                    self.delete();
-                    ConsumeResult::RefundExternal(external, inner)
-                } else {
-                    ConsumeResult::None
-                }
-            }
-        }
-    }
-
+    /// Consume the current node (that is, mark it as finished and pass the value up) and
+    /// recursively re-consume all the upstream nodes as long as they had already been
+    /// consumed thereby propagating the value from the current node up as much as possible.
+    /// In case all the upstream nodes have been consumed this call will return the amount
+    /// to be refunded to the external origin, else the value will still be locked at some level.
     pub fn consume(mut self) -> ConsumeResult {
         match self.node.origin {
             ValueOrigin::Local(parent) => {
@@ -169,11 +137,12 @@ impl ValueView {
                     .expect("Parent exist as link and should be loaded");
 
                 assert!(
-                    parent_node.refs != 0,
+                    parent_node.refs > 0,
                     "parent node does not contain ref for the node that was created from it"
                 );
 
                 parent_node.inner = parent_node.inner.saturating_add(self.node.inner);
+
                 let mut delete_self = false;
 
                 if self.node.refs == 0 {
@@ -187,29 +156,30 @@ impl ValueView {
 
                 self.save_node(parent, &parent_node);
 
-                // now check if the parent node can be consumed as well
-                let result = if parent_node.refs == 0 {
-                    self.new_from_node(parent, parent_node).check_consumed()
+                // Now check if the parent node has already been consumed
+                // and if so re-attempt value propagation up
+                let result = if parent_node.consumed {
+                    self.new_from_node(parent, parent_node).consume()
                 } else {
                     ConsumeResult::None
                 };
 
                 if delete_self {
-                    self.delete()
+                    self.delete();
                 }
 
                 result
             }
             ValueOrigin::External(external) => {
                 self.node.consumed = true;
+                let value = self.node.inner;
+                self.node.inner = 0;
                 self.save_node(self.key, &self.node);
                 if self.node.refs == 0 {
-                    let inner = self.node.inner;
+                    // No more child node left, therefore the node can be deleted
                     self.delete();
-                    ConsumeResult::RefundExternal(external, inner)
-                } else {
-                    ConsumeResult::None
                 }
+                ConsumeResult::RefundExternal(external, value)
             }
         }
     }
@@ -314,13 +284,15 @@ mod tests {
             let split_off_1 = value_tree.split_off(split_1, 500);
             let split_off_2 = value_tree.split_off(split_2, 500);
 
-            assert!(matches!(value_tree.consume(), ConsumeResult::None));
+            // Getting refunded the amount contained at the root only
+            assert!(matches!(value_tree.consume(), ConsumeResult::RefundExternal(e, 0) if e == origin));
 
-            assert!(matches!(split_off_1.consume(), ConsumeResult::None));
+            // Getting refunded the amount contained at split_1
+            assert!(matches!(split_off_1.consume(), ConsumeResult::RefundExternal(e, 500) if e == origin));
 
             assert!(matches!(
                 split_off_2.consume(),
-                ConsumeResult::RefundExternal(e, 1000) if e == origin,
+                ConsumeResult::RefundExternal(e, 500) if e == origin,
             ));
         });
     }
@@ -423,24 +395,32 @@ mod tests {
                 .expect("Should still exist")
                 .spend(50);
 
+            // Consuming a node in the middle - no refund expected,
+            // value accumulated at the parent (`root`)
             assert!(matches!(
                 ValueView::get(b"test::value_tree::".as_ref(), m1)
                     .expect("Should still exist")
                     .consume(),
                 ConsumeResult::None
             ));
+            // Consuming another node in the middle - no refund expected,
+            // value propagated up (to `m1` and then, recursively, to `root`)
             assert!(matches!(
                 ValueView::get(b"test::value_tree::".as_ref(), m2)
                     .expect("Should still exist")
                     .consume(),
                 ConsumeResult::None
             ));
+            // Consuming the root node - refund it's original value (after spend)
+            // plus those collected from children nodes `m1` and `m2`: (500 - 50) x 3
             assert!(matches!(
                 ValueView::get(b"test::value_tree::".as_ref(), root)
                     .expect("Should still exist")
                     .consume(),
-                ConsumeResult::None
+                ConsumeResult::RefundExternal(e, 1350) if e == origin,
             ));
+            // Consuming a node at the bottom - value can't propagate to the top yet,
+            // accumulated at the parent (`m3`)
             assert!(matches!(
                 ValueView::get(b"test::value_tree::".as_ref(), m4)
                     .expect("Should still exist")
@@ -448,12 +428,13 @@ mod tests {
                 ConsumeResult::None
             ));
 
-            // 2000 initial, 5*50 spent
+            // Consuming the last unconsumed node; value propagates all the way up:
+            // initial 250 less 50 spent times 2 == 400
             assert_eq!(
                 ValueView::get(b"test::value_tree::".as_ref(), m3)
                     .expect("Should still exist")
                     .consume(),
-                ConsumeResult::RefundExternal(origin, 1750),
+                ConsumeResult::RefundExternal(origin, 400),
             );
         });
     }

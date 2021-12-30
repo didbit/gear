@@ -252,18 +252,18 @@ where
 
         if let Some(mut gas_tree) = ValueView::get(GAS_VALUE_PREFIX, message_id) {
             let _ = gas_tree.split_off(message.id, message.gas_limit);
+
+            if common::program_exists(message.dest) {
+                common::queue_message(message);
+            } else {
+                Pallet::<T>::insert_to_mailbox(message.dest, message.clone());
+                Pallet::<T>::deposit_event(Event::Log(message));
+            }
         } else {
             log::error!(
                 "Message does not have associated gas tree: {:?}",
                 message_id
             );
-        }
-
-        if common::program_exists(message.dest) {
-            common::queue_message(message);
-        } else {
-            Pallet::<T>::insert_to_mailbox(message.dest, message.clone());
-            Pallet::<T>::deposit_event(Event::Log(message));
         }
     }
     fn wait_dispatch(&mut self, dispatch: Dispatch) {
