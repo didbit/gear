@@ -438,4 +438,251 @@ mod tests {
             );
         });
     }
+
+    #[test]
+    fn custom_test() {
+        use core::fmt::Write;
+        use hex_literal::hex;
+        use std::string::String;
+
+        pub fn encode_hex(bytes: &[u8]) -> String {
+            let mut s = String::with_capacity(bytes.len() * 2);
+            for &b in bytes {
+                write!(&mut s, "{:02x}", b).unwrap()
+            }
+            s
+        }
+
+        #[derive(Default, Debug)]
+        struct UserBalance {
+            pub free: u64,
+            pub reserved: u64,
+        }
+        impl UserBalance {
+            fn reserve(&mut self, val: u64) {
+                self.free -= val;
+                self.reserved += val;
+            }
+
+            fn unreserve(&mut self, val: u64) {
+                self.free += val;
+                self.reserved -= val;
+            }
+
+            fn topup(&mut self, val: u64) {
+                self.free += val;
+            }
+
+            fn spend(&mut self, val: u64) {
+                self.free -= val;
+            }
+        }
+
+        fn print_nodes() {
+            println!(" * Nodes storage:");
+            frame_support::storage::PrefixIterator::<(Vec<u8>, ValueNode)>::new(
+                b"test::value_tree::".as_ref().to_vec(),
+                b"test::value_tree::".as_ref().to_vec(),
+                |key, mut value| {
+                    let value_node = ValueNode::decode(&mut value)?;
+                    Ok((key.to_vec(), value_node))
+                },
+            )
+            .for_each(|(k, v)| {
+                println!("{:?}: {:?}", encode_hex(&k[30..]), v);
+            });
+        }
+
+        sp_io::TestExternalities::new_empty().execute_with(|| {
+            let node1 = H256::from_slice(
+                &hex!("0000000000000000000000000000000000000000000000000000000000000001").to_vec()
+                    [..],
+            );
+            let node2 = H256::from_slice(
+                &hex!("0000000000000000000000000000000000000000000000000000000000000002").to_vec()
+                    [..],
+            );
+            let node3 = H256::from_slice(
+                &hex!("0000000000000000000000000000000000000000000000000000000000000003").to_vec()
+                    [..],
+            );
+            let node4 = H256::from_slice(
+                &hex!("0000000000000000000000000000000000000000000000000000000000000004").to_vec()
+                    [..],
+            );
+            let node5 = H256::from_slice(
+                &hex!("0000000000000000000000000000000000000000000000000000000000000005").to_vec()
+                    [..],
+            );
+            let origin = H256::from_slice(
+                &hex!("1000000000000000000000000000000000000000000000000000000000000000").to_vec()
+                    [..],
+            );
+
+            let mut user_balance = UserBalance {
+                free: 31_000,
+                reserved: 0,
+            };
+            println!(" * * * * Initial user balance: {:?}", user_balance);
+
+            let mut validator_balance = UserBalance {
+                free: 0,
+                reserved: 0,
+            };
+            println!(
+                " * * * * Initial validator balance: {:?}",
+                validator_balance
+            );
+
+            println!();
+            println!("Creating value tree with value {:?}", 11_000_u64);
+            let _ = ValueView::get_or_create(b"test::value_tree::".as_ref(), origin, node1, 11_000);
+            user_balance.reserve(11_000);
+            println!(
+                " * * * * User balance after creating node {:?}: {:?}",
+                "0001", user_balance
+            );
+            println!();
+
+            println!("Spend {:?} on node {:?}", 1000, "0001");
+            ValueView::get(b"test::value_tree::".as_ref(), node1)
+                .unwrap()
+                .spend(1000);
+            user_balance.unreserve(1000);
+            user_balance.spend(1000);
+            validator_balance.topup(1000);
+            println!(" * * * * User balance: {:?}", user_balance);
+            println!(" * * * * Validator balance: {:?}", validator_balance);
+            println!();
+
+            print_nodes();
+            println!();
+
+            let _ = ValueView::get(b"test::value_tree::".as_ref(), node1)
+                .unwrap()
+                .split_off(node2, 2000);
+            print_nodes();
+            println!();
+
+            let _ = ValueView::get(b"test::value_tree::".as_ref(), node1)
+                .unwrap()
+                .split_off(node3, 4000);
+            print_nodes();
+            println!();
+
+            let _ = ValueView::get(b"test::value_tree::".as_ref(), node3)
+                .unwrap()
+                .split_off(node4, 1500);
+            print_nodes();
+            println!();
+
+            let _ = ValueView::get(b"test::value_tree::".as_ref(), node3)
+                .unwrap()
+                .split_off(node5, 2000);
+            print_nodes();
+            println!();
+
+            println!("Spend 200, 300, 400 and 500 on nodes 2, 3, 4 and 5, respectively");
+            ValueView::get(b"test::value_tree::".as_ref(), node2)
+                .unwrap()
+                .spend(200);
+            ValueView::get(b"test::value_tree::".as_ref(), node3)
+                .unwrap()
+                .spend(300);
+            ValueView::get(b"test::value_tree::".as_ref(), node4)
+                .unwrap()
+                .spend(400);
+            ValueView::get(b"test::value_tree::".as_ref(), node5)
+                .unwrap()
+                .spend(500);
+            user_balance.unreserve(1400);
+            user_balance.spend(1400);
+            validator_balance.topup(1400);
+            println!(" * * * * User balance: {:?}", user_balance);
+            println!(" * * * * Validator balance: {:?}", validator_balance);
+            println!();
+
+            print_nodes();
+            println!();
+
+            println!("Consuming node 0005");
+            let r = ValueView::get(b"test::value_tree::".as_ref(), node5)
+                .unwrap()
+                .consume();
+            if let ConsumeResult::RefundExternal(_e, v) = r {
+                user_balance.unreserve(v);
+            }
+            print_nodes();
+            println!(
+                " * * * * User balance after consuming node {:?}: {:?}",
+                "0005", user_balance
+            );
+            println!();
+
+            println!("Consuming node 0001");
+            let r = ValueView::get(b"test::value_tree::".as_ref(), node1)
+                .unwrap()
+                .consume();
+            if let ConsumeResult::RefundExternal(_e, v) = r {
+                user_balance.unreserve(v);
+            }
+            print_nodes();
+            println!(
+                " * * * * User balance after consuming node {:?}: {:?}",
+                "0001", user_balance
+            );
+            println!();
+
+            println!("Consuming node 0002");
+            let r = ValueView::get(b"test::value_tree::".as_ref(), node2)
+                .unwrap()
+                .consume();
+            if let ConsumeResult::RefundExternal(_e, v) = r {
+                user_balance.unreserve(v);
+            }
+            print_nodes();
+            println!(
+                " * * * * User balance after consuming node {:?}: {:?}",
+                "0002", user_balance
+            );
+            println!();
+
+            println!("Consuming node 0004");
+            let r = ValueView::get(b"test::value_tree::".as_ref(), node4)
+                .unwrap()
+                .consume();
+            if let ConsumeResult::RefundExternal(_e, v) = r {
+                user_balance.unreserve(v);
+            }
+            print_nodes();
+            println!(
+                " * * * * User balance after consuming node {:?}: {:?}",
+                "0004", user_balance
+            );
+            println!();
+
+            println!("Consuming node 0003");
+            let r = ValueView::get(b"test::value_tree::".as_ref(), node3)
+                .unwrap()
+                .consume();
+            if let ConsumeResult::RefundExternal(_e, v) = r {
+                user_balance.unreserve(v);
+            }
+            print_nodes();
+            println!(
+                " * * * * User balance after consuming node {:?}: {:?}",
+                "0003", user_balance
+            );
+            println!();
+        });
+    }
+
+    // scheme:
+    //             2
+    //           /
+    //  user - 1       4
+    //           \   /
+    //             3
+    //               \
+    //                 5
 }

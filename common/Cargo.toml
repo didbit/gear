@@ -23,6 +23,9 @@ sp-std = { version = "4.0.0-dev", git = "https://github.com/gear-tech/substrate.
 sp-arithmetic = { version = "4.0.0-dev", git = "https://github.com/gear-tech/substrate.git", branch = "gear-stable", default-features = false }
 frame-support = { version = "4.0.0-dev", git = "https://github.com/gear-tech/substrate.git", branch = "gear-stable", default-features = false }
 
+[dev-dependencies]
+hex-literal = "0.3.4"
+
 [features]
 default = ["std"]
 std = [
