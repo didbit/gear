@@ -199,24 +199,24 @@ where
 
         // Adjust block gas allowance
         GasAllowance::<T>::mutate(|x| *x = x.saturating_sub(amount));
-        // TODO: weight to fee calculator might not be identity fee
+
         let charge = T::GasConverter::gas_to_fee(amount);
 
         if let Some(mut gas_tree) = ValueView::get(GAS_VALUE_PREFIX, message_id) {
             gas_tree.spend(amount);
+            let _ = T::Currency::repatriate_reserved(
+                &<T::AccountId as Origin>::from_origin(origin.into_origin()),
+                &Authorship::<T>::author(),
+                charge,
+                BalanceStatus::Free,
+            );
         } else {
             log::error!(
-                "Message does not have associated gas tree: {:?}",
+                target: "runtime::gear",
+                "Message doesn't have an associated gas tree: {:?}",
                 message_id
             );
         }
-
-        let _ = T::Currency::repatriate_reserved(
-            &<T::AccountId as Origin>::from_origin(origin.into_origin()),
-            &Authorship::<T>::author(),
-            charge,
-            BalanceStatus::Free,
-        );
     }
     fn message_consumed(&mut self, message_id: MessageId) {
         let message_id = message_id.into_origin();
@@ -232,36 +232,44 @@ where
                     refund,
                 );
             } else {
-                log::error!(
-                    "Associated gas tree for message aren't able to be consumed: {:?}",
+                log::warn!(
+                    target: "runtime::gear",
+                    "Message {:?} consumed, gas hasn't yet been returned to the external origin",
                     message_id
                 );
             }
         } else {
             log::error!(
-                "Message does not have associated gas tree: {:?}",
+                target: "runtime::gear",
+                "Message doesn't have an associated gas tree: {:?}",
                 message_id
             );
         }
     }
     fn send_message(&mut self, message_id: MessageId, message: Message) {
         let message_id = message_id.into_origin();
-        let message: common::Message = message.into();
+        let mut message: common::Message = message.into();
 
-        log::debug!("Message sent (from: {:?}): {:?}", message_id, message);
-
-        if let Some(mut gas_tree) = ValueView::get(GAS_VALUE_PREFIX, message_id) {
-            let _ = gas_tree.split_off(message.id, message.gas_limit);
-        } else {
-            log::error!(
-                "Message does not have associated gas tree: {:?}",
-                message_id
-            );
-        }
+        log::debug!("Sending message {:?} from {:?}", message, message_id);
 
         if common::program_exists(message.dest) {
-            common::queue_message(message);
+            if let Some(mut gas_tree) = ValueView::get(GAS_VALUE_PREFIX, message_id) {
+                let _ = gas_tree.split_off(message.id, message.gas_limit);
+                common::queue_message(message);
+            } else {
+                log::error!(
+                    target: "runtime::gear",
+                    "Message not sent: parent message {:?} doesn't have an associated gas tree",
+                    message_id
+                );
+            }
         } else {
+            // Being placed into a user's mailbox means the end of a message life cycle.
+            // There can be no further processing whatsoever, hence any gas attempted to be
+            // passed along must be returned (i.e. remain in the parent message's value tree).
+            if message.gas_limit > 0 {
+                message.gas_limit = 0;
+            }
             Pallet::<T>::insert_to_mailbox(message.dest, message.clone());
             Pallet::<T>::deposit_event(Event::Log(message));
         }
@@ -294,7 +302,8 @@ where
             Pallet::<T>::deposit_event(Event::RemovedFromWaitList(awakening_id));
         } else {
             log::error!(
-                "Unknown message awaken: {:?} from {:?}",
+                target: "runtime::gear",
+                "Attempt to awaken unknown message {:?} from {:?}",
                 awakening_id,
                 message_id.into_origin()
             );
