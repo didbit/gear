@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["to_hex_registry",""],["to_wasm_ptr",""]],"struct":[["MetaType","A metatype abstraction."]]});
